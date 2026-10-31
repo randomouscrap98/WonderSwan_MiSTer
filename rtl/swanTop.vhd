@@ -671,7 +671,7 @@ begin
    (     
       clk            => clk,     
                                 
-      vertical       => LCD_vertical,
+      vertical       => '0', -- built-in vertical pad remap disabled; WonderSwan.sv's V- button set handles vertical controls
 
       KeyY1          => KeyY1   ,
       KeyY2          => KeyY2   ,
