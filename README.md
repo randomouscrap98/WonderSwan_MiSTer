@@ -95,3 +95,6 @@ Rewind capture is not compatible to "Pause when OSD is open", so pause is disabl
 
 # Missing features
 - Internal EEPROM (Name, Birthdate) not saved to SDCard
+
+# FORK NOTICE:
+This fork has modifications made for a friend using LLM assistance. 
