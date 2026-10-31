@@ -261,7 +261,7 @@ localparam CONF_STR = {
 	"P2O[27],Rewind Capture,Off,On;",
 	"-;",
 	"R0,Reset;",
-	"J1,A,B,Start,Y2/Right,Y4/Left,Y3/DOWN,Y1/UP,FastForward,Savestates,Rewind;",
+	"J1,A,B,Start,Y2/Right,Y4/Left,Y3/DOWN,Y1/UP,FastForward,Savestates,Rewind,Rotate,V-X1,V-X2,V-X3,V-X4,V-Y1,V-Y2,V-Y3,V-Y4,V-A,V-B,V-Start;",
 	"I,",
 	"Load=DPAD Up|Save=Down|Slot=L+R,",
 	"Active Slot 1,",
@@ -311,7 +311,11 @@ wire [24:0] ioctl_addr;
 wire [15:0] ioctl_dout;
 reg         ioctl_wait = 0;
 
-wire [15:0] joystick_0, joy0_unmod, joystick_1, joystick_2, joystick_3;
+wire [31:0] joystick_0, joy0_unmod;
+wire [15:0] joystick_1, joystick_2, joystick_3;
+reg        rotUpdate = 0;   // see "Rotate button" below
+reg  [1:0] rot_req   = 0;
+wire [1:0] orient_out;
 wire [10:0] ps2_key;
 
 wire [7:0]  filetype;
@@ -345,8 +349,8 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 
 	.status(status),
 	.status_menumask({14'd0, link_cable, cart_ready}),
-	.status_in({status[63:39], ss_slot, status[36:30], 2'b00, status[27:0]}),
-	.status_set(statusUpdate),
+	.status_in({status[63:39], ss_slot, status[36:30], 2'b00, status[27:12], orient_out, status[9:0]}),
+	.status_set(statusUpdate | rotUpdate),
 
 	.sd_lba('{sd_lba}),
 	.sd_rd(sd_rd),
@@ -379,7 +383,41 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.TIMESTAMP(RTC_time)
 );
 
-assign joystick_0 = joy0_unmod[12] ? 16'b0 : joy0_unmod;
+assign joystick_0 = joy0_unmod[12] ? 32'b0 : joy0_unmod;
+
+reg [1:0] videomode;
+
+// Orientation-aware controls: when the screen is vertical, the WonderSwan keys come
+// from the "V-" joystick functions (bits 15-25) instead of the normal ones.
+wire vert_ctrl = (videomode != 2'd0);
+wire keyX1    = vert_ctrl ? joystick_0[15] : joystick_0[3];
+wire keyX2    = vert_ctrl ? joystick_0[16] : joystick_0[0];
+wire keyX3    = vert_ctrl ? joystick_0[17] : joystick_0[2];
+wire keyX4    = vert_ctrl ? joystick_0[18] : joystick_0[1];
+wire keyY1    = vert_ctrl ? joystick_0[19] : joystick_0[10];
+wire keyY2    = vert_ctrl ? joystick_0[20] : joystick_0[7];
+wire keyY3    = vert_ctrl ? joystick_0[21] : joystick_0[9];
+wire keyY4    = vert_ctrl ? joystick_0[22] : joystick_0[8];
+wire keyA     = vert_ctrl ? joystick_0[23] : joystick_0[4];
+wire keyB     = vert_ctrl ? joystick_0[24] : joystick_0[5];
+wire keyStart = vert_ctrl ? joystick_0[25] : joystick_0[6];
+
+// Rotate button (bit 14): toggles Orientation (status[11:10]) between Horz and the last
+// vertical mode used (Vert or Vert180; starts as Vert180, matching Auto), and writes it
+// back to the OSD setting.
+reg       rot_old    = 0;
+reg [1:0] last_vmode = 2'd2;
+assign orient_out = rotUpdate ? rot_req : status[11:10];
+
+always @(posedge clk_sys) begin
+	rotUpdate <= 0;
+	rot_old   <= joystick_0[14];
+	if (status[11:10] == 2'd1 || status[11:10] == 2'd2) last_vmode <= status[11:10];
+	if (joystick_0[14] && !rot_old && !OSD_STATUS) begin
+		rot_req   <= vert_ctrl ? 2'd0 : last_vmode;
+		rotUpdate <= 1;
+	end
+end
 
 ///////////////////////////////////////////////////
 
@@ -555,17 +593,17 @@ SwanTop SwanTop (
 	.turbo            ( status[9]    ),
 	
 	// joystick
-	.KeyY1            (joystick_0[10]),
-	.KeyY2            (joystick_0[7]),
-	.KeyY3            (joystick_0[9]),
-	.KeyY4            (joystick_0[8]),
-	.KeyX1            (joystick_0[3]),
-	.KeyX2            (joystick_0[0]),
-	.KeyX3            (joystick_0[2]),
-	.KeyX4            (joystick_0[1]),
-	.KeyStart         (joystick_0[6]),
-	.KeyA             (joystick_0[4]),
-	.KeyB             (joystick_0[5]),
+	.KeyY1            (keyY1),
+	.KeyY2            (keyY2),
+	.KeyY3            (keyY3),
+	.KeyY4            (keyY4),
+	.KeyX1            (keyX1),
+	.KeyX2            (keyX2),
+	.KeyX3            (keyX3),
+	.KeyX4            (keyX4),
+	.KeyStart         (keyStart),
+	.KeyA             (keyA),
+	.KeyB             (keyB),
 
 	// EXT-port serial link
 	.link_enabled     (link_cable),
@@ -693,7 +731,6 @@ wire [23:0] b3_div24 = b3_mul24 / 16'D16384;
 wire vertical;
 reg hs, vs, hbl, vbl, ce_pix;
 reg [7:0] r,g,b;
-reg [1:0] videomode;
 reg [8:0] x,y;
 reg [2:0] div;
 reg signed [3:0] HShift;
